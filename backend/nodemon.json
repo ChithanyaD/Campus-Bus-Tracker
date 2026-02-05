@@ -1,0 +1,14 @@
+{
+  "watch": ["*.js", "models/", "routes/", "controllers/", "services/", "utils/"],
+  "ext": "js,json",
+  "ignore": ["node_modules/", "data/", "*.log"],
+  "exec": "node server.js",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": "500",
+  "restartable": "rs",
+  "colours": true,
+  "verbose": false,
+  "exitcrash": true
+}
