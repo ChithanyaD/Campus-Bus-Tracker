@@ -16,8 +16,17 @@ class SocketService {
   setupSocketHandlers() {
     this.io.use(async (socket, next) => {
       try {
-        // Authenticate socket connection
+        // Authenticate socket connection.
+        // In development, if JWT_SECRET is not set we allow unauthenticated
+        // sockets so that real-time features still work out of the box.
         const token = socket.handshake.auth.token;
+
+        if (!process.env.JWT_SECRET) {
+          console.warn('Socket connected without JWT_SECRET set (dev mode, no auth).');
+          socket.userId = null;
+          socket.userRole = null;
+          return next();
+        }
 
         if (!token) {
           return next(new Error('Authentication token required'));

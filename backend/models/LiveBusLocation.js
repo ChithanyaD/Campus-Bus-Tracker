@@ -249,9 +249,19 @@ LiveBusLocation.findActive = function() {
         attributes: ['id', 'name', 'latitude', 'longitude']
       }
     ],
-    order: [['lastUpdated', 'DESC']]
+    // Order by latest update time (backed by "last_updated" column)
+    order: [['last_updated', 'DESC']]
   });
 };
+
+// Expose a convenient "lastUpdated" virtual property so other parts of the
+// codebase and API responses can use camelCase while the underlying column
+// remains "last_updated".
+Object.defineProperty(LiveBusLocation.prototype, 'lastUpdated', {
+  get() {
+    return this.getDataValue('last_updated');
+  }
+});
 
 LiveBusLocation.findByBusId = function(busId) {
   return this.findOne({
@@ -270,6 +280,28 @@ LiveBusLocation.findByBusId = function(busId) {
         as: 'nextStop'
       }
     ]
+  });
+};
+
+// Find latest location record for a bus regardless of whether sharing is active.
+LiveBusLocation.findAnyByBusId = function(busId) {
+  return this.findOne({
+    where: { busId },
+    include: [
+      {
+        model: require('./Bus'),
+        as: 'bus'
+      },
+      {
+        model: require('./User'),
+        as: 'driver'
+      },
+      {
+        model: require('./BusStop'),
+        as: 'nextStop'
+      }
+    ],
+    order: [['last_updated', 'DESC']]
   });
 };
 

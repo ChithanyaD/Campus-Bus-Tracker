@@ -210,8 +210,8 @@ const startLocationSharing = async (req, res) => {
       });
     }
 
-    // Check if already sharing location
-    const existingLocation = await LiveBusLocation.findByBusId(busId);
+    // Check if already sharing location (consider any existing record)
+    const existingLocation = await LiveBusLocation.findAnyByBusId(busId);
     if (existingLocation && existingLocation.isLocationSharing) {
       return res.status(400).json({
         error: 'Already sharing',
@@ -240,16 +240,25 @@ const startLocationSharing = async (req, res) => {
       status: 'active'
     });
 
-    // Create initial location entry
-    const location = await LiveBusLocation.create({
-      busId,
-      driverId: req.user.id,
-      latitude: 0, // Will be updated with first location update
-      longitude: 0,
-      isLocationSharing: true,
-      currentRouteId: finalRouteId,
-      tripStartedAt: new Date()
-    });
+    // Create or re-activate location entry
+    let location;
+    if (existingLocation) {
+      existingLocation.isLocationSharing = true;
+      existingLocation.currentRouteId = finalRouteId;
+      existingLocation.tripStartedAt = new Date();
+      await existingLocation.save();
+      location = existingLocation;
+    } else {
+      location = await LiveBusLocation.create({
+        busId,
+        driverId: req.user.id,
+        latitude: 0, // Will be updated with first location update
+        longitude: 0,
+        isLocationSharing: true,
+        currentRouteId: finalRouteId,
+        tripStartedAt: new Date()
+      });
+    }
 
     // Update bus current route if specified
     if (routeId && routeId !== bus.currentRouteId) {
@@ -323,8 +332,8 @@ const stopLocationSharing = async (req, res) => {
       });
     }
 
-    // Find active location and trip
-    const location = await LiveBusLocation.findByBusId(busId);
+    // Find latest location record and active trip
+    const location = await LiveBusLocation.findAnyByBusId(busId);
     const activeTrip = await TripLog.findOne({
       where: { busId, driverId: req.user.id, status: 'active' }
     });

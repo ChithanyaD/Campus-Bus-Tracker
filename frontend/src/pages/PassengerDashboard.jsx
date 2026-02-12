@@ -7,6 +7,7 @@ import {
   FaLocationArrow,
   FaSearch
 } from 'react-icons/fa';
+import { io } from 'socket.io-client';
 import api from '../services/authService';
 import toast from 'react-hot-toast';
 
@@ -19,10 +20,59 @@ const PassengerDashboard = () => {
   const [busStops, setBusStops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tracking, setTracking] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   useEffect(() => {
     fetchInitialData();
   }, []);
+
+  // Set up Socket.IO when tracking a specific bus
+  useEffect(() => {
+    if (!tracking || !selectedBus) return;
+
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || window.location.origin).replace(/\/$/, '');
+    const socket = io(backendUrl, {
+      auth: { token: localStorage.getItem('token') },
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+      setSocketConnected(true);
+      // Subscribe to this specific bus for richer future updates if needed
+      socket.emit('subscribeToBus', selectedBus);
+    });
+
+    // Real-time location updates for the selected bus
+    socket.on('locationUpdate', (data) => {
+      if (data.busId !== selectedBus) return;
+      setBusLocation(prev => ({
+        ...(prev || {}),
+        ...data.location
+      }));
+    });
+
+    // If driver stops sharing, automatically stop tracking on passenger side
+    socket.on('locationSharingStopped', (data) => {
+      if (data.busId !== selectedBus) return;
+      toast('Driver stopped location sharing for this bus');
+      stopTracking();
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('Passenger socket connect error:', err.message || err);
+      setSocketConnected(false);
+    });
+
+    return () => {
+      try {
+        socket.emit('unsubscribeFromBus', selectedBus);
+      } catch (e) {
+        // ignore
+      }
+      socket.disconnect();
+      setSocketConnected(false);
+    };
+  }, [tracking, selectedBus]);
 
   const fetchInitialData = async () => {
     try {

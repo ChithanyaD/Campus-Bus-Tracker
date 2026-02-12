@@ -38,12 +38,18 @@ const findAvailablePort = (startPort) => {
 // Configure Socket.IO
 const io = socketIo(server, {
   cors: {
-    origin: process.env.SOCKET_CORS_ORIGIN || "http://localhost:3000",
+    // Allow configurable origin; default to any origin in development so
+    // ngrok / mobile clients can connect without CORS issues.
+    origin: process.env.SOCKET_CORS_ORIGIN || '*',
     methods: ["GET", "POST"],
     credentials: true
   },
   transports: ['websocket', 'polling']
 });
+
+// Trust first proxy (required for correct client IP when behind ngrok /
+// reverse proxies and to avoid express-rate-limit X-Forwarded-For warnings).
+app.set('trust proxy', 1);
 
 // Initialize socket service
 socketService.init(io);
@@ -78,7 +84,9 @@ app.use('/api/', limiter);
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  // Allow configurable origin; default to any origin in development so
+  // ngrok / mobile clients can access the API without CORS issues.
+  origin: process.env.FRONTEND_URL || true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']

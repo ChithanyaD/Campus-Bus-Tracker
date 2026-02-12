@@ -85,6 +85,26 @@ const DriverDashboard = () => {
         return;
       }
 
+      // Enforce secure origin for geolocation on non-localhost hosts.
+      // Browsers generally only allow precise geolocation on:
+      //   - https:// origins
+      //   - http://localhost or http://127.0.0.1
+      // If the app is opened via an IP like http://10.x.x.x:3000, geolocation
+      // will be blocked no matter what permissions you grant.
+      const { protocol, hostname } = window.location;
+      const isLocalhost =
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '[::1]';
+      const isSecure = protocol === 'https:';
+
+      if (!isSecure && !isLocalhost) {
+        toast.error(
+          'Location can only be shared over HTTPS or localhost. Please open this app using an HTTPS URL (for example, an ngrok HTTPS link).'
+        );
+        return;
+      }
+
       // Request location permissions
       const hasPermission = await locationService.requestPermissions();
       if (!hasPermission) {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FaBus, FaMapMarkedAlt, FaSearch } from 'react-icons/fa';
 import L from 'leaflet';
+import { io } from 'socket.io-client';
 import api from '../services/authService';
 import toast from 'react-hot-toast';
 import MapComponent from '../components/MapComponent';
@@ -18,7 +19,69 @@ const LiveTracking = () => {
     // Set up polling for real-time updates (fallback for when WebSocket isn't available)
     const interval = setInterval(fetchActiveLocations, 30000); // Update every 30 seconds
 
-    return () => clearInterval(interval);
+    // Setup Socket.IO for real-time updates.
+    // Use the current origin so that, when running behind ngrok, the
+    // WebSocket traffic goes through Vite's proxy at /socket.io.
+    const socket = io('/', {
+      auth: { token: localStorage.getItem('token') },
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id);
+    });
+
+    // When a single bus location updates, patch it into state immediately
+    // so cards and map update in real time.
+    socket.on('locationUpdate', (data) => {
+      setActiveLocations(prev => {
+        if (!prev || prev.length === 0) return prev;
+        const idx = prev.findIndex(loc => loc.busId === data.busId);
+        if (idx === -1) return prev;
+
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          speedKmh: data.location.speedKmh,
+          lastUpdated: data.location.lastUpdated,
+          nextStop: data.location.nextStop || updated[idx].nextStop,
+          etaToNextStop: data.location.etaToNextStop || updated[idx].etaToNextStop
+        };
+        return updated;
+      });
+
+      // Also refresh markers so the bus icon moves without reload.
+      setMapMarkers(prevMarkers => {
+        if (!prevMarkers || prevMarkers.length === 0) return prevMarkers;
+        return prevMarkers.map(marker => {
+          // Match by bus number in title if possible
+          if (!marker.title) return marker;
+          const match = activeLocations.find(loc =>
+            marker.title.includes(loc.bus.busNumber)
+          );
+          if (!match || match.busId !== data.busId) return marker;
+          return {
+            ...marker,
+            position: [data.location.latitude, data.location.longitude]
+          };
+        });
+      });
+    });
+
+    // When sharing starts/stops, refresh active list
+    socket.on('locationSharingStarted', () => fetchActiveLocations());
+    socket.on('locationSharingStopped', () => fetchActiveLocations());
+
+    socket.on('connect_error', (err) => {
+      console.warn('Socket connect error:', err.message || err);
+    });
+
+    return () => {
+      clearInterval(interval);
+      try { socket.disconnect(); } catch (e) {}
+    };
   }, []);
 
   const fetchActiveLocations = async () => {

@@ -9,6 +9,7 @@ import {
   FaEye,
   FaCog
 } from 'react-icons/fa';
+import { io } from 'socket.io-client';
 import api from '../services/authService';
 
 const AdminDashboard = () => {
@@ -20,32 +21,62 @@ const AdminDashboard = () => {
     totalRoutes: 0
   });
   const [loading, setLoading] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
+
+  const fetchStats = async () => {
+    try {
+      const [busStats, userStats, routesResponse] = await Promise.all([
+        api.get('/buses/stats'),
+        api.get('/users/stats'),
+        api.get('/routes')
+      ]);
+
+      setStats({
+        totalBuses: busStats.data.stats.totalBuses,
+        activeBuses: busStats.data.stats.activeBuses,
+        assignedBuses: busStats.data.stats.assignedBuses,
+        totalUsers: userStats.data.stats.totalUsers,
+        activeUsers: userStats.data.stats.activeUsers,
+        totalRoutes: routesResponse.data.count
+      });
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const [busStats, userStats, routesResponse] = await Promise.all([
-          api.get('/buses/stats'),
-          api.get('/users/stats'),
-          api.get('/routes')
-        ]);
-
-        setStats({
-          totalBuses: busStats.data.stats.totalBuses,
-          activeBuses: busStats.data.stats.activeBuses,
-          assignedBuses: busStats.data.stats.assignedBuses,
-          totalUsers: userStats.data.stats.totalUsers,
-          activeUsers: userStats.data.stats.activeUsers,
-          totalRoutes: routesResponse.data.count
-        });
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchStats();
+
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || window.location.origin).replace(/\/$/, '');
+    const socket = io(backendUrl, {
+      auth: { token: localStorage.getItem('token') },
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+      setSocketConnected(true);
+    });
+
+    // Whenever any bus starts/stops sharing or updates, refresh stats so
+    // active bus counters stay in sync without manual refresh
+    const refreshEvents = ['locationSharingStarted', 'locationSharingStopped', 'locationUpdate'];
+    refreshEvents.forEach(event => {
+      socket.on(event, () => {
+        fetchStats();
+      });
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('Admin socket connect error:', err.message || err);
+      setSocketConnected(false);
+    });
+
+    return () => {
+      socket.disconnect();
+      setSocketConnected(false);
+    };
   }, []);
 
   const statCards = [
